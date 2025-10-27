@@ -24,6 +24,7 @@ func TestCafeNegative(t *testing.T) {
         {"/cafe?city=omsk", http.StatusBadRequest, "unknown city"},
         {"/cafe?city=tula&count=na", http.StatusBadRequest, "incorrect count"},
     }
+    
     for _, v := range requests {
         response := httptest.NewRecorder()
         req := httptest.NewRequest("GET", v.request, nil)
@@ -35,71 +36,90 @@ func TestCafeNegative(t *testing.T) {
 }
 
 func TestCafeCount(t *testing.T) {
+    handler := http.HandlerFunc(mainHandle) // ИСПОЛЬЗУЕМ httptest вместо реального сервера
+
     requests := []struct {
-        count int 
-        want  int 
+        count int
+        want  int
     }{
         {count: 0, want: 0},
         {count: 1, want: 1},
         {count: 2, want: 2},
-        {count: 100, want: len(cafeList["moscow"])}, 
+        {count: 100, want: len(cafeList["moscow"])},
     }
 
     for _, tt := range requests {
-        url := fmt.Sprintf("http://localhost:8080/cafe?city=moscow&count=%d", tt.count)
+        // Создаем запрос через httptest, а не реальный HTTP
+        response := httptest.NewRecorder()
+        url := fmt.Sprintf("/cafe?city=moscow&count=%d", tt.count)
+        req := httptest.NewRequest("GET", url, nil)
         
-        resp, err := http.Get(url)
-        require.NoError(t, err, "Ошибка при выполнении запроса")
-        defer resp.Body.Close()
+        // Выполняем обработчик напрямую
+        handler.ServeHTTP(response, req)
 
-        require.Equal(t, http.StatusOK, resp.StatusCode, "Код ответа не 200")
+        // Проверяем, что запрос успешно обработан
+        require.Equal(t, http.StatusOK, response.Code, "Код ответа не 200")
 
-        body, err := io.ReadAll(resp.Body)
+        // Читаем тело ответа
+        body, err := io.ReadAll(response.Body)
         require.NoError(t, err, "Ошибка при чтении ответа")
 
+        // Если ожидаем 0 кафе, проверяем пустую строку
         if tt.want == 0 {
             assert.Equal(t, "", string(body), "Ожидалась пустая строка")
             continue
         }
 
+        // Разбиваем ответ на слайс кафе
         cafes := strings.Split(string(body), ",")
         
+        // Проверяем количество возвращенных кафе
         assert.Equal(t, tt.want, len(cafes), "Неверное количество кафе в ответе")
     }
 }
 
 func TestCafeSearch(t *testing.T) {
+    handler := http.HandlerFunc(mainHandle) // ИСПОЛЬЗУЕМ httptest вместо реального сервера
+
     requests := []struct {
-        search    string 
+        search    string
         wantCount int
     }{
         {search: "фасоль", wantCount: 0},
-        {search: "кофе", wantCount: 2},
-        {search: "вилка", wantCount: 1},
+        {search: "кофе", wantCount: 2},      // "Мир кофе" и "Кофе и завтраки"
+        {search: "вилка", wantCount: 1},     // "Ложка и вилка"
     }
 
     for _, tt := range requests {
-        url := fmt.Sprintf("http://localhost:8080/cafe?city=moscow&search=%s", tt.search)
+        // Создаем запрос через httptest
+        response := httptest.NewRecorder()
+        url := fmt.Sprintf("/cafe?city=moscow&search=%s", tt.search)
+        req := httptest.NewRequest("GET", url, nil)
+        
+        // Выполняем обработчик напрямую
+        handler.ServeHTTP(response, req)
 
-        resp, err := http.Get(url)
-        require.NoError(t, err, "Ошибка при выполнении запроса")
-        defer resp.Body.Close()
+        // Проверяем, что запрос успешно обработан
+        require.Equal(t, http.StatusOK, response.Code, "Код ответа не 200")
 
-        require.Equal(t, http.StatusOK, resp.StatusCode, "Код ответа не 200")
-
-        body, err := io.ReadAll(resp.Body)
+        // Читаем тело ответа
+        body, err := io.ReadAll(response.Body)
         require.NoError(t, err, "Ошибка при чтении ответа")
 
+        // Если ожидаем 0 кафе, проверяем пустую строку
         if tt.wantCount == 0 {
             assert.Equal(t, "", string(body), "Ожидалась пустая строка")
             continue
         }
 
+        // Разбиваем ответ на слайс кафе
         cafes := strings.Split(string(body), ",")
         
+        // Проверяем количество найденных кафе
         assert.Equal(t, tt.wantCount, len(cafes), 
             "Неверное количество найденных кафе для поиска '%s'", tt.search)
 
+        // Проверяем, что каждое кафе содержит искомую строку (без учета регистра)
         searchLower := strings.ToLower(tt.search)
         for _, cafe := range cafes {
             cafeLower := strings.ToLower(cafe)
